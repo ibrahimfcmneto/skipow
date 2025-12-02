@@ -12,7 +12,7 @@ export interface Token {
   status: TokenStatus;
   productName: string;
   productImage: string;
-  createdAt: number;
+  createdAt: string; // Mudou de number para string para ser compatível com o banco
 }
 
 export interface CartItem {

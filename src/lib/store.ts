@@ -1,77 +1,114 @@
-import { v4 as uuidv4 } from 'uuid';
-import { Token, TokenStatus, Product } from '@/types';
+import { supabase } from './supabase';
+import { Product, Token } from '@/types';
 
-import cervejaImg from '@/assets/cerveja.png';
-import aguaImg from '@/assets/agua.png';
-import refrigeranteImg from '@/assets/refrigerante.png';
-import sucoImg from '@/assets/suco.png';
+// --- PRODUTOS ---
 
-const TOKENS_KEY = 'fichas_tokens';
-
-export const products: Product[] = [
-  { id: '1', name: 'Cerveja Pilsen', price: 12.00, image: cervejaImg },
-  { id: '2', name: 'Água Mineral', price: 5.00, image: aguaImg },
-  { id: '3', name: 'Refrigerante', price: 8.00, image: refrigeranteImg },
-  { id: '4', name: 'Suco Natural', price: 10.00, image: sucoImg },
-];
-
-export function getTokens(): Token[] {
-  const stored = localStorage.getItem(TOKENS_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch {
+export async function getProducts(): Promise<Product[]> {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .order('name');
+  
+  if (error) {
+    console.error('Erro ao buscar produtos:', error);
     return [];
   }
+  return data || [];
 }
 
-export function saveTokens(tokens: Token[]): void {
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
-}
+// --- FICHAS (TOKENS) ---
 
-export function generateTokens(product: Product, quantity: number): Token[] {
-  const existingTokens = getTokens();
-  const newTokens: Token[] = [];
+// Busca as fichas compradas (Para o futuro: aqui filtraremos pelo user_id do cliente logado)
+export async function getAvailableTokens(): Promise<Token[]> {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('status', 'DISPONIVEL')
+    .order('created_at', { ascending: false });
 
-  for (let i = 0; i < quantity; i++) {
-    newTokens.push({
-      id: uuidv4(),
-      status: 'DISPONIVEL',
-      productName: product.name,
-      productImage: product.image,
-      createdAt: Date.now(),
-    });
+  if (error) {
+    console.error('Erro ao buscar tokens:', error);
+    return [];
   }
 
-  saveTokens([...existingTokens, ...newTokens]);
-  return newTokens;
+  // Mapeia o formato do banco (snake_case) para o do React (camelCase)
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    status: item.status,
+    productName: item.product_name,
+    productImage: item.product_image,
+    createdAt: item.created_at,
+  }));
 }
 
-export function getAvailableTokens(): Token[] {
-  return getTokens().filter(t => t.status === 'DISPONIVEL');
+// Gera novas fichas após "pagamento"
+export async function generateTokens(product: Product, quantity: number): Promise<void> {
+  const newTokens = Array.from({ length: quantity }).map(() => ({
+    status: 'DISPONIVEL',
+    product_name: product.name,
+    product_image: product.image,
+    // created_at é automático no banco
+  }));
+
+  const { error } = await supabase
+    .from('tokens')
+    .insert(newTokens);
+
+  if (error) {
+    console.error('Erro ao criar tokens:', error);
+    throw error;
+  }
 }
 
-export function validateToken(tokenId: string): { success: boolean; token?: Token; error?: 'CONSUMED' | 'NOT_FOUND' } {
-  const tokens = getTokens();
-  const tokenIndex = tokens.findIndex(t => t.id === tokenId);
+// Valida a ficha (Usado pelo Barman)
+export async function validateToken(tokenId: string): Promise<{ success: boolean; token?: Token; error?: 'CONSUMED' | 'NOT_FOUND' | 'ERROR' }> {
+  // 1. Busca o token no banco
+  const { data: tokenData, error: fetchError } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('id', tokenId)
+    .single();
 
-  if (tokenIndex === -1) {
+  if (fetchError || !tokenData) {
     return { success: false, error: 'NOT_FOUND' };
   }
 
-  const token = tokens[tokenIndex];
-
-  if (token.status === 'CONSUMIDO') {
-    return { success: false, error: 'CONSUMED', token };
+  // 2. Verifica se já foi usado
+  if (tokenData.status === 'CONSUMIDO') {
+    // Retorna o token mesmo assim para mostrarmos qual produto era
+    return { 
+      success: false, 
+      error: 'CONSUMED', 
+      token: {
+        id: tokenData.id,
+        status: 'CONSUMIDO',
+        productName: tokenData.product_name,
+        productImage: tokenData.product_image,
+        createdAt: tokenData.created_at
+      }
+    };
   }
 
-  // Update status to CONSUMED
-  tokens[tokenIndex] = { ...token, status: 'CONSUMIDO' };
-  saveTokens(tokens);
+  // 3. Atualiza para CONSUMIDO (Queima a ficha)
+  const { data: updatedData, error: updateError } = await supabase
+    .from('tokens')
+    .update({ status: 'CONSUMIDO' })
+    .eq('id', tokenId)
+    .select()
+    .single();
 
-  return { success: true, token: tokens[tokenIndex] };
-}
+  if (updateError || !updatedData) {
+    return { success: false, error: 'ERROR' };
+  }
 
-export function getTokenById(tokenId: string): Token | undefined {
-  return getTokens().find(t => t.id === tokenId);
+  return { 
+    success: true, 
+    token: {
+      id: updatedData.id,
+      status: 'CONSUMIDO',
+      productName: updatedData.product_name,
+      productImage: updatedData.product_image,
+      createdAt: updatedData.created_at
+    }
+  };
 }

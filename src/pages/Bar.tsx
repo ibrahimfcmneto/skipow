@@ -61,7 +61,7 @@ export default function Bar() {
     };
   }, []);
 
-  const handleValidate = () => {
+const handleValidate = async () => {
     const code = codeInput.trim();
     if (!code) {
       toast({
@@ -72,7 +72,8 @@ export default function Bar() {
       return;
     }
 
-    const result = validateToken(code);
+    // Chamada Assíncrona ao Banco
+    const result = await validateToken(code);
 
     if (result.success) {
       setValidationResult({ type: 'success', token: result.token });
