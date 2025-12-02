@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Product, Token } from '@/types';
-import { products, generateTokens, getAvailableTokens } from '@/lib/store';
+import { getProducts, generateTokens, getAvailableTokens } from '@/lib/store';
 import { Header } from '@/components/Header';
 import { ProductCard } from '@/components/ProductCard';
 import { QuantityModal } from '@/components/QuantityModal';
@@ -10,31 +10,48 @@ import { TokenItem } from '@/components/TokenItem';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/hooks/use-toast';
-import { ShoppingBag, Ticket, ScanLine } from 'lucide-react';
+import { ShoppingBag, Ticket, ScanLine, Loader2 } from 'lucide-react';
 
 export default function Index() {
+  const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantityModalOpen, setQuantityModalOpen] = useState(false);
   const [selectedToken, setSelectedToken] = useState<Token | null>(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const [activeTab, setActiveTab] = useState('loja');
+  const [loading, setLoading] = useState(true);
+  const [purchasing, setPurchasing] = useState(false);
 
   useEffect(() => {
-    setTokens(getAvailableTokens());
+    loadData();
   }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    const [productsData, tokensData] = await Promise.all([
+      getProducts(),
+      getAvailableTokens()
+    ]);
+    setProducts(productsData);
+    setTokens(tokensData);
+    setLoading(false);
+  };
 
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
     setQuantityModalOpen(true);
   };
 
-  const handleConfirmPurchase = (product: Product, quantity: number) => {
-    generateTokens(product, quantity);
-    setTokens(getAvailableTokens());
+  const handleConfirmPurchase = async (product: Product, quantity: number) => {
+    setPurchasing(true);
+    await generateTokens(product, quantity);
+    const updatedTokens = await getAvailableTokens();
+    setTokens(updatedTokens);
     setQuantityModalOpen(false);
     setSelectedProduct(null);
     setActiveTab('pedidos');
+    setPurchasing(false);
     
     toast({
       title: "Compra realizada!",
@@ -46,6 +63,14 @@ export default function Index() {
     setSelectedToken(token);
     setQrModalOpen(true);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -131,6 +156,7 @@ export default function Index() {
           setSelectedProduct(null);
         }}
         onConfirm={handleConfirmPurchase}
+        loading={purchasing}
       />
 
       <QRModal

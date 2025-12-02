@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { ValidationResult } from '@/components/ValidationResult';
 import { validateToken } from '@/lib/store';
 import { Token } from '@/types';
-import { Camera, Home, Search, X } from 'lucide-react';
+import { Camera, Home, Search, X, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 type ValidationState = {
@@ -19,6 +19,7 @@ export default function Bar() {
   const [validationResult, setValidationResult] = useState<ValidationState>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -61,7 +62,7 @@ export default function Bar() {
     };
   }, []);
 
-  const handleValidate = () => {
+  const handleValidate = async () => {
     const code = codeInput.trim();
     if (!code) {
       toast({
@@ -72,7 +73,9 @@ export default function Bar() {
       return;
     }
 
-    const result = validateToken(code);
+    setValidating(true);
+    const result = await validateToken(code);
+    setValidating(false);
 
     if (result.success) {
       setValidationResult({ type: 'success', token: result.token });
@@ -172,7 +175,7 @@ export default function Bar() {
                   onChange={(e) => setCodeInput(e.target.value)}
                   className="h-12 font-mono text-sm"
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && !validating) {
                       handleValidate();
                     }
                   }}
@@ -183,10 +186,14 @@ export default function Bar() {
                 size="lg"
                 className="w-full"
                 onClick={handleValidate}
-                disabled={!codeInput.trim()}
+                disabled={!codeInput.trim() || validating}
               >
-                <Search className="h-5 w-5 mr-2" />
-                Validar Código
+                {validating ? (
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                ) : (
+                  <Search className="h-5 w-5 mr-2" />
+                )}
+                {validating ? 'Validando...' : 'Validar Código'}
               </Button>
             </div>
           </div>
