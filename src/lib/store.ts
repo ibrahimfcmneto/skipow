@@ -1,77 +1,158 @@
-import { v4 as uuidv4 } from 'uuid';
-import { Token, TokenStatus, Product } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
+import { Token, Product } from '@/types';
 
-import cervejaImg from '@/assets/cerveja.png';
-import aguaImg from '@/assets/agua.png';
-import refrigeranteImg from '@/assets/refrigerante.png';
-import sucoImg from '@/assets/suco.png';
-
-const TOKENS_KEY = 'fichas_tokens';
-
-export const products: Product[] = [
-  { id: '1', name: 'Cerveja Pilsen', price: 12.00, image: cervejaImg },
-  { id: '2', name: 'Água Mineral', price: 5.00, image: aguaImg },
-  { id: '3', name: 'Refrigerante', price: 8.00, image: refrigeranteImg },
-  { id: '4', name: 'Suco Natural', price: 10.00, image: sucoImg },
-];
-
-export function getTokens(): Token[] {
-  const stored = localStorage.getItem(TOKENS_KEY);
-  if (!stored) return [];
-  try {
-    return JSON.parse(stored);
-  } catch {
+export async function getProducts(): Promise<Product[]> {
+  const { data, error } = await supabase
+    .from('products')
+    .select('*')
+    .order('name');
+  
+  if (error) {
+    console.error('Error fetching products:', error);
     return [];
   }
+  
+  return data || [];
 }
 
-export function saveTokens(tokens: Token[]): void {
-  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+export async function getTokens(): Promise<Token[]> {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching tokens:', error);
+    return [];
+  }
+  
+  return (data || []).map(t => ({
+    id: t.id,
+    status: t.status as 'DISPONIVEL' | 'CONSUMIDO',
+    productName: t.product_name,
+    productImage: t.product_image,
+    createdAt: new Date(t.created_at).getTime(),
+  }));
 }
 
-export function generateTokens(product: Product, quantity: number): Token[] {
-  const existingTokens = getTokens();
-  const newTokens: Token[] = [];
-
+export async function generateTokens(product: Product, quantity: number): Promise<Token[]> {
+  const newTokens = [];
+  
   for (let i = 0; i < quantity; i++) {
     newTokens.push({
-      id: uuidv4(),
       status: 'DISPONIVEL',
-      productName: product.name,
-      productImage: product.image,
-      createdAt: Date.now(),
+      product_name: product.name,
+      product_image: product.image,
     });
   }
 
-  saveTokens([...existingTokens, ...newTokens]);
-  return newTokens;
+  const { data, error } = await supabase
+    .from('tokens')
+    .insert(newTokens)
+    .select();
+
+  if (error) {
+    console.error('Error generating tokens:', error);
+    return [];
+  }
+
+  return (data || []).map(t => ({
+    id: t.id,
+    status: t.status as 'DISPONIVEL' | 'CONSUMIDO',
+    productName: t.product_name,
+    productImage: t.product_image,
+    createdAt: new Date(t.created_at).getTime(),
+  }));
 }
 
-export function getAvailableTokens(): Token[] {
-  return getTokens().filter(t => t.status === 'DISPONIVEL');
+export async function getAvailableTokens(): Promise<Token[]> {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('status', 'DISPONIVEL')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching available tokens:', error);
+    return [];
+  }
+  
+  return (data || []).map(t => ({
+    id: t.id,
+    status: t.status as 'DISPONIVEL' | 'CONSUMIDO',
+    productName: t.product_name,
+    productImage: t.product_image,
+    createdAt: new Date(t.created_at).getTime(),
+  }));
 }
 
-export function validateToken(tokenId: string): { success: boolean; token?: Token; error?: 'CONSUMED' | 'NOT_FOUND' } {
-  const tokens = getTokens();
-  const tokenIndex = tokens.findIndex(t => t.id === tokenId);
+export async function validateToken(tokenId: string): Promise<{ success: boolean; token?: Token; error?: 'CONSUMED' | 'NOT_FOUND' }> {
+  // First, fetch the token
+  const { data: tokenData, error: fetchError } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('id', tokenId)
+    .maybeSingle();
 
-  if (tokenIndex === -1) {
+  if (fetchError || !tokenData) {
     return { success: false, error: 'NOT_FOUND' };
   }
 
-  const token = tokens[tokenIndex];
-
-  if (token.status === 'CONSUMIDO') {
-    return { success: false, error: 'CONSUMED', token };
+  if (tokenData.status === 'CONSUMIDO') {
+    return { 
+      success: false, 
+      error: 'CONSUMED', 
+      token: {
+        id: tokenData.id,
+        status: 'CONSUMIDO',
+        productName: tokenData.product_name,
+        productImage: tokenData.product_image,
+        createdAt: new Date(tokenData.created_at).getTime(),
+      }
+    };
   }
 
   // Update status to CONSUMED
-  tokens[tokenIndex] = { ...token, status: 'CONSUMIDO' };
-  saveTokens(tokens);
+  const { data: updatedData, error: updateError } = await supabase
+    .from('tokens')
+    .update({ status: 'CONSUMIDO' })
+    .eq('id', tokenId)
+    .select()
+    .single();
 
-  return { success: true, token: tokens[tokenIndex] };
+  if (updateError) {
+    console.error('Error updating token:', updateError);
+    return { success: false, error: 'NOT_FOUND' };
+  }
+
+  return { 
+    success: true, 
+    token: {
+      id: updatedData.id,
+      status: 'CONSUMIDO',
+      productName: updatedData.product_name,
+      productImage: updatedData.product_image,
+      createdAt: new Date(updatedData.created_at).getTime(),
+    }
+  };
 }
 
-export function getTokenById(tokenId: string): Token | undefined {
-  return getTokens().find(t => t.id === tokenId);
+export async function getTokenById(tokenId: string): Promise<Token | undefined> {
+  const { data, error } = await supabase
+    .from('tokens')
+    .select('*')
+    .eq('id', tokenId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return undefined;
+  }
+
+  return {
+    id: data.id,
+    status: data.status as 'DISPONIVEL' | 'CONSUMIDO',
+    productName: data.product_name,
+    productImage: data.product_image,
+    createdAt: new Date(data.created_at).getTime(),
+  };
 }

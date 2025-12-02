@@ -7,22 +7,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Minus, Plus } from 'lucide-react';
+import { Minus, Plus, Loader2 } from 'lucide-react';
 
 interface QuantityModalProps {
   product: Product | null;
   open: boolean;
   onClose: () => void;
   onConfirm: (product: Product, quantity: number) => void;
+  loading?: boolean;
 }
 
-export function QuantityModal({ product, open, onClose, onConfirm }: QuantityModalProps) {
+export function QuantityModal({ product, open, onClose, onConfirm, loading }: QuantityModalProps) {
   const [quantity, setQuantity] = useState(1);
 
   const handleConfirm = () => {
-    if (product && quantity > 0) {
+    if (product && quantity > 0 && !loading) {
       onConfirm(product, quantity);
-      setQuantity(1);
     }
   };
 
@@ -91,8 +91,16 @@ export function QuantityModal({ product, open, onClose, onConfirm }: QuantityMod
             size="lg"
             className="w-full"
             onClick={handleConfirm}
+            disabled={loading}
           >
-            CONFIRMAR COMPRA
+            {loading ? (
+              <>
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Processando...
+              </>
+            ) : (
+              'CONFIRMAR COMPRA'
+            )}
           </Button>
         </div>
       </DialogContent>
