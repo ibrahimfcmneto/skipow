@@ -78,7 +78,7 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       <Header
-        title="🎟️ Fichas Digitais"
+        title="Skipow"
         rightContent={
           <Link to="/bar">
             <Button variant="ghost" size="sm" className="text-header-foreground hover:bg-header-foreground/10">
